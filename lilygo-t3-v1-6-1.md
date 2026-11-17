@@ -5,8 +5,8 @@
 | Référence | LILYGO T3 V1.6.1, également désignée TTGO LoRa32 V2.1 (1.6.1) ou LoRa32-OLED |
 | Variante | 868 / 915 MHz |
 | Quantité | 1 |
-| État | Testé (mise en service, afficheur, identifiant radio) |
-| Mise à jour | 12/11/2026 |
+| État | Testé (mise en service, afficheur, liaison LoRaWAN opérationnelle) |
+| Mise à jour | 17/11/2026 |
 
 ## 1. Caractéristiques générales
 
@@ -67,13 +67,78 @@ Paramètres du programme de contrôle : 868,1 MHz, largeur de bande 125 kHz, fac
 
 ### 4.4 Mise en service LoRaWAN
 
-1. Enregistrer la carte sur le serveur réseau en utilisant l'identifiant relevé au § 4.2 et faire générer la clé d'application.
-2. Installer **Git**, **VS Code** et l'extension **PlatformIO IDE**.
-3. Récupérer le projet correspondant au programme embarqué.
-4. Copier le fichier de configuration d'exemple sous le nom attendu par le projet, et y reporter les identifiants et la clé au format **MSB**.
-5. Sélectionner la cible matérielle correspondant à la carte dans le fichier de configuration du projet.
-6. Compiler et téléverser par le port USB.
-7. Contrôler dans la console du serveur l'acceptation de la demande de connexion puis l'arrivée des messages applicatifs.
+Procédure établie avec le programme embarqué d'origine (comptage d'appareils à proximité), recompilé avec les paramètres du réseau visé.
+
+#### 4.4.1 Enregistrement sur le serveur réseau
+
+1. Ouvrir la console du serveur réseau et créer une application.
+2. Choisir l'ajout manuel d'un équipement.
+3. Renseigner :
+   - plan de fréquences : Europe 863-870 MHz, SF9 en fenêtre RX2 ;
+   - version LoRaWAN : 1.0.3 ; paramètres régionaux : RP001 1.0.3 révision A ;
+   - identifiant de l'équipement : valeur relevée au § 4.2 ;
+   - identifiant d'application : valeur proposée par la console ;
+   - clé d'application : faire générer.
+4. Valider l'enregistrement.
+5. Pour chacune des trois valeurs, afficher le format **MSB** (bouton de changement de représentation) et les conserver dans cet ordre.
+
+#### 4.4.2 Préparation de l'environnement de compilation
+
+1. Installer **Git**, **VS Code**, puis l'extension **PlatformIO IDE**.
+2. Récupérer le projet correspondant au programme embarqué.
+3. Ouvrir le dossier du projet dans VS Code.
+
+#### 4.4.3 Fichiers de configuration
+
+Dans le projet, chaque fichier de configuration se crée en copiant son modèle, puis en renommant la copie. Vérifier qu'aucun modèle ne reste sans copie :
+
+| Modèle | Copie à créer |
+|---|---|
+| `platformio_orig.ini` | `platformio.ini` |
+| `shared/paxcounter_orig.conf` | `shared/paxcounter.conf` |
+| `shared/loraconf_sample.h` | `shared/loraconf.h` |
+| `shared/ota_sample.conf` | `shared/ota.conf` |
+
+#### 4.4.4 Paramétrage
+
+1. Dans `platformio.ini`, renseigner la cible matérielle correspondant à la révision de la carte (fichier du dossier `shared/hal`).
+2. Dans `platformio.ini`, figer la version de la bibliothèque de pilotage des LED en indiquant un numéro de version explicite dans la liste des dépendances ; sans cela, la version la plus récente est téléchargée et peut être incompatible avec le cadre logiciel du projet.
+3. Dans `shared/lmic_config.h`, vérifier que la région européenne est active et qu'aucune autre région n'est décommentée.
+4. Dans `shared/loraconf.h`, reporter les trois valeurs au format **MSB**, en respectant strictement la correspondance des champs :
+
+| Champ du fichier | Valeur de la console |
+|---|---|
+| `DEVEUI` | identifiant de l'équipement |
+| `APPEUI` | identifiant d'application |
+| `APPKEY` | clé d'application |
+
+#### 4.4.5 Compilation et téléversement
+
+1. Fermer tout moniteur série occupant le port de la carte.
+2. Lancer la tâche **Upload** de l'environnement USB.
+3. En cas d'échec de connexion, consulter le § 5 (mode programmation).
+4. Attendre l'indication de succès et la vérification de l'empreinte.
+
+#### 4.4.6 Contrôle du fonctionnement
+
+1. Ouvrir le moniteur série à **115200** bauds et appuyer sur **RST**.
+2. Suivre la séquence attendue : demande de connexion, émission, ouverture des fenêtres de réception, puis connexion établie.
+3. Dans la console du serveur, onglet de suivi en direct de l'équipement : vérifier l'acceptation de la demande de connexion, puis l'arrivée régulière des messages applicatifs.
+
+Résultat obtenu : connexion établie et messages reçus par le serveur.
+
+### 4.5 Diagnostic d'une connexion qui n'aboutit pas
+
+1. Augmenter le niveau de journalisation dans `platformio.ini`, recompiler, puis relire le journal de démarrage.
+2. Interpréter la séquence :
+
+| Journal de la carte | Suivi de la passerelle | Interprétation |
+|---|---|---|
+| Aucune trace d'émission | — | La pile radio ne démarre pas : vérifier la cible matérielle et la région |
+| Émission puis attente sans réponse | Aucune trame reçue | Problème de portée, d'antenne ou de bande |
+| Émission puis attente sans réponse | Trame reçue | Valeurs d'identification non conformes à l'enregistrement |
+
+3. Dans ce dernier cas, comparer octet par octet les trois valeurs du fichier de configuration avec celles de la console, au format MSB, en vérifiant qu'aucune n'a été reportée dans le mauvais champ.
 
 ## 5. Limites et précautions
 
@@ -84,6 +149,10 @@ Paramètres du programme de contrôle : 868,1 MHz, largeur de bande 125 kHz, fac
 - Le téléversement d'un nouveau programme efface celui déjà présent : relever au préalable les informations utiles affichées au démarrage.
 - La réglementation européenne limite la puissance et le taux d'occupation du canal : régler la puissance d'émission et l'intervalle entre messages en conséquence.
 - Un programme de comptage d'appareils à proximité traite des données issues d'équipements personnels : en usage réel, vérifier le cadre réglementaire applicable à la protection des données.
+- La carte ne comporte ni bouton de programmation ni bouton utilisateur : seuls un interrupteur d'alimentation et un bouton de réinitialisation sont présents. Le passage en mode programmation est normalement automatique ; en cas d'échec, relier brièvement la broche d'entrée **IO0** à la masse pendant la réinitialisation, puis relâcher. La même broche sert à faire défiler les pages de l'afficheur en fonctionnement normal.
+- Les dépendances logicielles du projet doivent être figées à une version compatible : une version plus récente qu'au moment de la publication du projet peut interrompre la compilation.
+- Les avertissements de l'analyseur de code de l'éditeur concernant des types non reconnus dans les fichiers de configuration sont sans effet sur la compilation.
+- Le lecteur de carte mémoire signale son absence au démarrage : ce message est normal si aucune carte n'est insérée.
 
 ## 6. Interfaces et raccordement
 
@@ -111,8 +180,9 @@ Paramètres du programme de contrôle : 868,1 MHz, largeur de bande 125 kHz, fac
 | Élément | Rôle |
 |---|---|
 | Bouton RST | Redémarrage |
-| Bouton BOOT | Mode programmation, et navigation dans les pages de l'afficheur |
-| Micro-USB | Alimentation, programmation, liaison série |
+| Interrupteur ON / OFF | Alimentation de la carte |
+| Broche IO0 (connecteur latéral) | Mode programmation par mise à la masse, et navigation dans les pages de l'afficheur |
+| Micro-USB | Alimentation, programmation, liaison série à 115200 bauds |
 | Connecteur SMA / IPEX | Antenne radio |
 
 ## 7. Ressources
